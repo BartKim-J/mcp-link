@@ -27,6 +27,7 @@ func main() {
 						Name:    "port",
 						Aliases: []string{"p"},
 						Value:   8080,
+						EnvVars: []string{"PORT"},
 						Usage:   "Port to listen on",
 					},
 					&cli.StringFlag{
