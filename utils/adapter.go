@@ -207,7 +207,7 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 	// Add all API endpoints as tools
 	for _, api := range parser.APIs() {
 		// Create tool name from API path and method
-		name := sanitizeToolName(fmt.Sprintf("%s_%s_%s", prefix, strings.ToLower(api.Method), api.Path))
+		name := sanitizeToolName(fmt.Sprintf("%s_%s", prefix, api.OperationID))
 
 		// Define tool options
 		opts := []mcp.ToolOption{
