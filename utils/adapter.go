@@ -206,59 +206,43 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 
 	// Add all API endpoints as tools
 	for _, api := range parser.APIs() {
-		// Create tool name from API path and method
 		name := sanitizeToolName(fmt.Sprintf("%s_%s", prefix, api.OperationID))
-
-		// Define tool options
 		opts := []mcp.ToolOption{
 			mcp.WithDescription(api.OperationID + " " + api.Summary + " " + api.Description),
 		}
 
-		// Add parameters
-		// paramsOpts := mcp.WithObject("searchParams", mcp.Description("url parameters for the tool"))
 		query_props := map[string]interface{}{}
 		path_props := map[string]interface{}{}
 
 		for _, param := range api.Parameters {
-			if param.In == "query" {
-				query_props[param.Name] = param
-				query_props["type"] = param.Schema.Type
-				if param.Schema.Enum != nil {
-					query_props["enum"] = param.Schema.Enum
-				}
-				if param.Schema.Format != "" {
-					query_props["format"] = param.Schema.Format
-				}
-				if param.Schema.Default != nil {
-					query_props["default"] = param.Schema.Default
-				}
-				if param.Schema.Description != "" {
-					query_props["description"] = param.Schema.Description
-				}
-				if param.Schema.Items != nil {
-					query_props["items"] = param.Schema.Items
-				}
-				if param.Schema.Properties != nil {
-					query_props["properties"] = param.Schema.Properties
-				}
-			} else if param.In == "path" {
-				path_props[param.Name] = param
-				path_props["type"] = param.Schema.Type
-				if param.Schema.Enum != nil {
-					path_props["enum"] = param.Schema.Enum
-				}
-				if param.Schema.Format != "" {
-					path_props["format"] = param.Schema.Format
-				}
-				if param.Schema.Default != nil {
-					path_props["default"] = param.Schema.Default
-				}
-				if param.Schema.Description != "" {
-					path_props["description"] = param.Schema.Description
-				}
-				if param.Schema.Items != nil {
-					path_props["items"] = param.Schema.Items
-				}
+			prop := map[string]interface{}{
+				"type": param.Schema.Type,
+				"description": param.Description,
+			}
+			if param.Schema.Enum != nil {
+				prop["enum"] = param.Schema.Enum
+			}
+			if param.Schema.Format != "" {
+				prop["format"] = param.Schema.Format
+			}
+			if param.Schema.Default != nil {
+				prop["default"] = param.Schema.Default
+			}
+			if param.Schema.Items != nil {
+				prop["items"] = param.Schema.Items
+			}
+			if param.Schema.Properties != nil {
+				prop["properties"] = param.Schema.Properties
+			}
+			if param.Required {
+				prop["required"] = true
+			}
+
+			switch param.In {
+			case "query":
+				query_props[param.Name] = prop
+			case "path":
+				path_props[param.Name] = prop
 			}
 		}
 
@@ -269,43 +253,39 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 			opts = append(opts, mcp.WithObject("pathNames", mcp.Description("path parameters for the tool"), mcp.Properties(path_props)))
 		}
 
-		// Handle request body parameters if present
 		props := map[string]interface{}{}
 		if api.RequestBody != nil && len(api.RequestBody.Content) > 0 {
 			for _, mediaType := range api.RequestBody.Content {
 				if mediaType.Schema != nil {
 					for propName, propSchema := range mediaType.Schema.Properties {
-						props[propName] = propSchema
-						props["type"] = propSchema.Type
+						prop := map[string]interface{}{
+							"type":        propSchema.Type,
+							"description": propSchema.Description,
+						}
 						if propSchema.Enum != nil {
-							props["enum"] = propSchema.Enum
+							prop["enum"] = propSchema.Enum
 						}
 						if propSchema.Format != "" {
-							props["format"] = propSchema.Format
+							prop["format"] = propSchema.Format
 						}
 						if propSchema.Default != nil {
-							props["default"] = propSchema.Default
-						}
-						if propSchema.Description != "" {
-							props["description"] = propSchema.Description
+							prop["default"] = propSchema.Default
 						}
 						if propSchema.Items != nil {
-							props["items"] = propSchema.Items
+							prop["items"] = propSchema.Items
 						}
 						if propSchema.Properties != nil {
-							props["properties"] = propSchema.Properties
+							prop["properties"] = propSchema.Properties
 						}
+						props[propName] = prop
 					}
 				}
 			}
 			opts = append(opts, mcp.WithObject("requestBody", mcp.Description("request body for the tool"), mcp.Properties(props)))
 		}
 
-		// Create the tool and handler
 		tool := mcp.NewTool(name, opts...)
 		handler := NewToolHandler(api.Method, baseURL+api.Path, extraHeaders)
-
-		// Add the tool to the server
 		s.AddTool(tool, handler)
 	}
 
