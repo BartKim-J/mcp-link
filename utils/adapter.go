@@ -14,11 +14,24 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func sanitizeToolName(name string) string {
-	// Convert to lowercase and replace common separators with underscore
-	s := strings.ToLower(name)
+func prefixRequired(isRequired bool, desc string) string {
+	if isRequired && !strings.HasPrefix(desc, "[required]") {
+		return "[required] " + desc
+	}
+	return desc
+}
 
-	// Replace special characters
+func isRequiredField(field string, requiredList []string) bool {
+	for _, name := range requiredList {
+		if name == field {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeToolName(name string) string {
+	s := strings.ToLower(name)
 	s = strings.ReplaceAll(s, " ", "_")
 	s = strings.ReplaceAll(s, "-", "_")
 	s = strings.ReplaceAll(s, "/", "_")
@@ -30,101 +43,69 @@ func sanitizeToolName(name string) string {
 	s = strings.ReplaceAll(s, "&", "and")
 	s = strings.ReplaceAll(s, "=", "_eq_")
 	s = strings.ReplaceAll(s, "%", "_pct_")
-
-	// Remove consecutive underscores
 	for strings.Contains(s, "__") {
 		s = strings.ReplaceAll(s, "__", "_")
 	}
-
-	// Remove trailing underscore
 	s = strings.TrimSuffix(s, "_")
-
-	// Remove leading underscore
 	s = strings.TrimPrefix(s, "_")
-
-	// Ensure the name is not empty
 	if s == "" {
 		return "unnamed_tool"
 	}
-
 	return s
 }
 
 func NewToolHandler(method string, url string, extraHeaders map[string]string) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Extract parameters from the request
 		params := request.Params.Arguments
-
-		// Create maps for different parameter types
 		pathParams := make(map[string]interface{})
 		queryParams := make(map[string]interface{})
 		bodyParams := make(map[string]interface{})
 
-		// Extract specific parameter groups
 		if pathParamsMap, ok := params["pathNames"].(map[string]interface{}); ok {
 			pathParams = pathParamsMap
 		}
-
 		if urlParamsMap, ok := params["searchParams"].(map[string]interface{}); ok {
 			queryParams = urlParamsMap
 		}
-
 		if requestBodyMap, ok := params["requestBody"].(map[string]interface{}); ok {
 			bodyParams = requestBodyMap
 		}
 
-		// If structured params aren't found, use flat params for backward compatibility
 		if len(pathParams) == 0 && len(queryParams) == 0 && len(bodyParams) == 0 {
-			// Process all params without structured separation (legacy approach)
 			for paramName, paramValue := range params {
 				placeholder := fmt.Sprintf("{%s}", paramName)
 				if strings.Contains(url, placeholder) {
 					pathParams[paramName] = paramValue
 				} else {
-					// Put in body by default
 					bodyParams[paramName] = paramValue
 				}
 			}
 		}
 
-		// Create a copy of the URL for path parameter substitution
 		finalURL := url
-
-		// Process URL path parameters - replace {param_name} with the value from pathParams
 		for paramName, paramValue := range pathParams {
 			placeholder := fmt.Sprintf("{%s}", paramName)
 			if strings.Contains(finalURL, placeholder) {
-				// Convert the param value to string
 				var strValue string
 				switch v := paramValue.(type) {
 				case string:
 					strValue = v
 				case nil:
-					// Use empty string for nil path parameters
 					strValue = ""
 				default:
-					// Convert other types to string
 					strValue = fmt.Sprintf("%v", v)
 				}
-
-				// Replace the placeholder in the URL
 				finalURL = strings.ReplaceAll(finalURL, placeholder, strValue)
 			}
 		}
-		// Add query parameters to the URL
+
 		if len(queryParams) > 0 {
-			// Parse the URL to add query parameters properly
 			parsedURL, err := neturl.Parse(finalURL)
 			if err != nil {
 				return mcp.NewToolResultText(fmt.Sprintf("Error parsing URL: %v", err)), nil
 			}
-
-			// Get existing query values or create new ones
 			q := parsedURL.Query()
-
-			// Add all query parameters
 			for paramName, paramValue := range queryParams {
-				// Convert the param value to string
 				var strValue string
 				switch v := paramValue.(type) {
 				case string:
@@ -132,19 +113,14 @@ func NewToolHandler(method string, url string, extraHeaders map[string]string) f
 				case nil:
 					continue
 				default:
-					// Convert other types to string
 					strValue = fmt.Sprintf("%v", v)
 				}
-
 				q.Add(paramName, strValue)
 			}
-
-			// Set the updated query string back to the URL
 			parsedURL.RawQuery = q.Encode()
 			finalURL = parsedURL.String()
 		}
 
-		// Convert body parameters to JSON for the HTTP request body
 		var reqBody io.Reader = nil
 		if len(bodyParams) > 0 {
 			jsonParams, err := json.Marshal(bodyParams)
@@ -154,13 +130,11 @@ func NewToolHandler(method string, url string, extraHeaders map[string]string) f
 			reqBody = bytes.NewBuffer(jsonParams)
 		}
 
-		// Create HTTP request with the processed URL
 		req, err := http.NewRequestWithContext(ctx, method, finalURL, reqBody)
 		if err != nil {
 			return mcp.NewToolResultText(fmt.Sprintf("Error creating request: %v", err)), nil
 		}
 
-		// Set headers
 		if reqBody != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -168,7 +142,6 @@ func NewToolHandler(method string, url string, extraHeaders map[string]string) f
 			req.Header.Set(key, value)
 		}
 
-		// Execute the request
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -176,24 +149,17 @@ func NewToolHandler(method string, url string, extraHeaders map[string]string) f
 		}
 		defer resp.Body.Close()
 
-		// Read response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return mcp.NewToolResultText(fmt.Sprintf("Error reading response: %v", err)), nil
 		}
 
-		// TODO: handle image response
-		// if strings.HasPrefix(resp.Header.Get("Content-Type"), "image/") {
-		// return mcp.NewToolResultImage("", base64.StdEncoding.EncodeToString(body), resp.Header.Get("Content-Type")), nil
-		// }
-
 		return mcp.NewToolResultText(string(body)), nil
 	}
 }
 
-// NewMCPFromCustomParser creates an MCP server from our custom OpenAPIParser
+
 func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, parser OpenAPIParser) (*server.MCPServer, error) {
-	// Create a new MCP server
 	apiInfo := parser.Info()
 	prefix := "mcplink_" + sanitizeToolName(apiInfo.Title)
 
@@ -204,20 +170,22 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 		server.WithLogging(),
 	)
 
-	// Add all API endpoints as tools
 	for _, api := range parser.APIs() {
 		name := sanitizeToolName(fmt.Sprintf("%s_%s", prefix, api.OperationID))
 		opts := []mcp.ToolOption{
 			mcp.WithDescription(api.OperationID + " " + api.Summary + " " + api.Description),
 		}
 
-		query_props := map[string]interface{}{}
-		path_props := map[string]interface{}{}
+		queryProps := map[string]interface{}{}
+		requiredQueryParams := []string{}
+
+		pathProps := map[string]interface{}{}
+		requiredPathParams := []string{}
 
 		for _, param := range api.Parameters {
 			prop := map[string]interface{}{
-				"type": param.Schema.Type,
-				"description": param.Description,
+				"type":        param.Schema.Type,
+				"description": prefixRequired(param.Required, param.Description),
 			}
 			if param.Schema.Enum != nil {
 				prop["enum"] = param.Schema.Enum
@@ -234,33 +202,50 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 			if param.Schema.Properties != nil {
 				prop["properties"] = param.Schema.Properties
 			}
-			if param.Required {
-				prop["required"] = true
-			}
 
 			switch param.In {
 			case "query":
-				query_props[param.Name] = prop
+				queryProps[param.Name] = prop
+				if param.Required {
+					requiredQueryParams = append(requiredQueryParams, param.Name)
+				}
 			case "path":
-				path_props[param.Name] = prop
+				pathProps[param.Name] = prop
+				if param.Required {
+					requiredPathParams = append(requiredPathParams, param.Name)
+				}
 			}
 		}
 
-		if len(query_props) > 0 {
-			opts = append(opts, mcp.WithObject("searchParams", mcp.Description("url parameters for the tool"), mcp.Properties(query_props)))
+		if len(queryProps) > 0 {
+			opts = append(opts, mcp.WithObject("searchParams",
+				mcp.Description("url parameters for the tool"),
+				mcp.Properties(queryProps),
+				func(schema map[string]interface{}) {
+					schema["required"] = requiredQueryParams
+				},
+			))
 		}
-		if len(path_props) > 0 {
-			opts = append(opts, mcp.WithObject("pathNames", mcp.Description("path parameters for the tool"), mcp.Properties(path_props)))
+		if len(pathProps) > 0 {
+			opts = append(opts, mcp.WithObject("pathNames",
+				mcp.Description("path parameters for the tool"),
+				mcp.Properties(pathProps),
+				func(schema map[string]interface{}) {
+					schema["required"] = requiredPathParams
+				},
+			))
 		}
 
-		props := map[string]interface{}{}
+		bodyProps := map[string]interface{}{}
+		requiredBodyParams := []string{}
+
 		if api.RequestBody != nil && len(api.RequestBody.Content) > 0 {
 			for _, mediaType := range api.RequestBody.Content {
 				if mediaType.Schema != nil {
 					for propName, propSchema := range mediaType.Schema.Properties {
 						prop := map[string]interface{}{
 							"type":        propSchema.Type,
-							"description": propSchema.Description,
+							"description": prefixRequired(isRequiredField(propName, mediaType.Schema.Required), propSchema.Description),
 						}
 						if propSchema.Enum != nil {
 							prop["enum"] = propSchema.Enum
@@ -277,11 +262,20 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 						if propSchema.Properties != nil {
 							prop["properties"] = propSchema.Properties
 						}
-						props[propName] = prop
+						bodyProps[propName] = prop
+						if isRequiredField(propName, mediaType.Schema.Required) {
+							requiredBodyParams = append(requiredBodyParams, propName)
+						}
 					}
 				}
 			}
-			opts = append(opts, mcp.WithObject("requestBody", mcp.Description("request body for the tool"), mcp.Properties(props)))
+			opts = append(opts, mcp.WithObject("requestBody",
+				mcp.Description("request body for the tool"),
+				mcp.Properties(bodyProps),
+				func(schema map[string]interface{}) {
+					schema["required"] = requiredBodyParams
+				},
+			))
 		}
 
 		tool := mcp.NewTool(name, opts...)
