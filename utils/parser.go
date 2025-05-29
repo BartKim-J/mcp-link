@@ -226,10 +226,15 @@ func (p *SimpleOpenAPIParser) APIs() []APIEndpoint {
 
 					if in, ok := paramObj["in"].(string); ok {
 						parameter.In = in
+						if in == "path" {
+						    parameter.Required = true
+                        }
 					}
 
 					if required, ok := paramObj["required"].(bool); ok {
-						parameter.Required = required
+                        if parameter.In != "path" {
+                            parameter.Required = required
+                        }
 					}
 
 					if description, ok := paramObj["description"].(string); ok {
