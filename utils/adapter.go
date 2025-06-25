@@ -171,7 +171,7 @@ func NewMCPFromCustomParser(baseURL string, extraHeaders map[string]string, pars
 	)
 
 	for _, api := range parser.APIs() {
-		name := sanitizeToolName(fmt.Sprintf("%s_%s", prefix, api.OperationID))
+		name := sanitizeToolName(fmt.Sprintf("%s", api.OperationID))
 		opts := []mcp.ToolOption{
 			mcp.WithDescription(api.OperationID + " " + api.Summary + " " + api.Description),
 		}
