@@ -101,7 +101,7 @@ func NewSimpleOpenAPIParser(data []byte) (*SimpleOpenAPIParser, error) {
 	// Create a new resolver
 	resolver := jsref.New()
 
-	resolved, err := resolver.Resolve(v, "#", jsref.WithRecursiveResolution(false))
+	resolved, err := resolver.Resolve(v, "#", jsref.WithRecursiveResolution(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve references: %w", err)
 	}
